@@ -1,0 +1,173 @@
+﻿Program.Sub.ScreenSU.Start
+Gui.frmAP..Create
+Gui.frmAP..Caption("AP Xero Export")
+Gui.frmAP..Size(11685,7965)
+Gui.frmAP..MinX(0)
+Gui.frmAP..MinY(0)
+Gui.frmAP..Position(0,0)
+Gui.frmAP..BackColor(-2147483633)
+Gui.frmAP..MousePointer(0)
+Gui.frmAP..Event(UnLoad,frmAP_UnLoad)
+Gui.frmAP.gsgcAPBatches.Create(GsGridControl)
+Gui.frmAP.gsgcAPBatches.Size(11325,6255)
+Gui.frmAP.gsgcAPBatches.Position(60,555)
+Gui.frmAP.gsgcAPBatches.Visible(False)
+Gui.frmAP.cmdBrowse.Create(Button)
+Gui.frmAP.cmdBrowse.Size(495,375)
+Gui.frmAP.cmdBrowse.Position(1320,120)
+Gui.frmAP.cmdBrowse.Caption("^")
+Gui.frmAP.cmdBrowse.Event(Click,cmdBrowse_Click)
+Gui.frmAP.txtAPBatch.Create(TextBox,"",True,1170,300,0,75,165,True,0,"Arial",8,-2147483643,1)
+Gui.frmAP.txtAPBatch.Event(LostFocus,txtAPBatch_LostFocus)
+Gui.frmAP.cmdExport.Create(Button)
+Gui.frmAP.cmdExport.Size(1245,375)
+Gui.frmAP.cmdExport.Position(75,6885)
+Gui.frmAP.cmdExport.Caption("Export")
+Gui.frmAP.cmdExport.Event(Click,cmdExport_Click)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.ODBC.Connection!CON.OPENCONNECTION(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+gui.frmAP.gsgcAPBatches.anchor(15)
+'Lower left corners
+gui.frmAP.cmdExport.anchor(6)
+gui.frmAP..Show
+Program.Sub.Main.End
+
+Program.Sub.cmdBrowse_Click.Start
+V.Local.sSQL.Declare(String)
+V.Local.sCol.Declare(String)
+V.Local.sColW.Declare(String)
+V.Local.sRet.Declare(String)
+V.Local.sSQL.set("select DISTINCT BATCH_NUM, DATE_BATCH, USERID from V_AP_OPEN_ITEMS")
+'Split Column Names into an array (*!* delimited string)
+F.Intrinsic.String.Split("Batch Num*!*Batch Date*!*User","*!*",V.Local.sCol)
+'Split Column widths into an array (*!* delimited string)
+F.Intrinsic.String.Split("500*!*1000*!*1000","*!*",V.Local.sColW)
+F.Intrinsic.UI.Browser("Select a Batch","con",V.Local.sSQL,V.Local.sCol,V.Local.sColW,V.Local.sRet)
+F.Intrinsic.Control.If(V.Local.sRet,<>,"***CANCEL***")
+	f.Intrinsic.String.Split(v.Local.sRet,"*!*",v.Local.sRet)
+	gui.frmAP.txtAPBatch.Text(v.Local.sRet(0))
+	f.Intrinsic.Control.CallSub(buildTable,"BatchNo",v.Local.sret(0))
+F.Intrinsic.Control.EndIf
+Program.Sub.cmdBrowse_Click.End
+
+Program.Sub.buildTable.Start
+v.Local.ssql.Declare
+f.Intrinsic.String.Build("SELECT VENDOR_ID, NAME_VENDOR as 'ContactName','' as 'EmailAddress','' as 'POAddressLine1','' as 'POAddressLine2','' as 'POAddressLine3','' as 'POAddressLine4','' as 'POCity','' as 'PORegion','' as 'POPostalCode','' as 'POCountry',  INVOICE as 'InvoiceNumber', INVC_DATE_FORMAT as 'InvoiceDate', '' as 'DueDate', '' as 'InventoryItemCode', PART as 'Part', '' as 'Description', PO_NO, PO_LINE, QTY as 'Quantity', Round(IF(QTY=0,0,IF(COST_INVOICED=0,0,COST_INVOICED/QTY)),4) As 'UnitPrice', GL_ACCOUNT as 'AccountCode', DESCR as 'TaxType', '' as 'TrackingName1', '' as 'TrackingOption1', '' as 'TrackingName2', '' as 'TrackingOption2', EXCH_CURR AS 'Currency' FROM AP_INV_TAX_DTL LEFT JOIN V_VENDOR_MASTER ON V_VENDOR_MASTER.VENDOR = AP_INV_TAX_DTL.VENDOR_ID WHERE BATCH_NUM='{0}' AND POST_DATE<>'00000000'",v.args.BatchNo,v.Local.ssql)
+f.Intrinsic.Control.If(v.DataTable.dt.Exists)
+	f.Data.DataTable.close("dt")
+f.Intrinsic.Control.EndIf
+f.Data.DataTable.CreateFromSQL("dt","con",v.Local.ssql,true)
+
+gui.frmAP.gsgcAPBatches.visible(False)
+f.Intrinsic.Control.CallSub(cleanData)
+gui.frmAP.gsgcAPBatches.DataSource("dt")
+gui.frmAP.gsgcAPBatches.AddGridviewFromDatatable("gv","dt")
+f.Intrinsic.Control.CallSub(setColumnProperty)
+
+gui.frmAP.gsgcAPBatches.visible(True)
+Program.Sub.buildTable.End
+
+Program.Sub.cleanData.Start
+v.Local.i.Declare
+v.Local.sSql.Declare
+v.Local.sLongPart.Declare
+v.Local.sDescription.Declare
+v.Local.sPayment.Declare
+v.Local.lMonth.Declare
+v.Local.lYear.Declare
+V.Local.dDateDue.Declare
+v.Local.sTax.Declare
+
+f.Intrinsic.Control.For(v.Local.i,0,v.DataTable.dt.RowCount--,1)
+	'Set Long Part Number
+	f.Intrinsic.String.Build("SELECT DISPLAY_PART FROM INV_LXR WHERE GSS_PART='{0}'",V.DataTable.dt(v.Local.i).Part!fieldvaltrim,v.Local.sSql)
+	f.ODBC.Connection!CON.executeandreturn(v.Local.sSql,v.Local.sLongPart)
+	f.Intrinsic.Control.If(v.Local.sLongPart.Trim,<>,"")
+		f.Data.DataTable.SetValue("dt",v.Local.i,"InventoryItemCode",v.Local.sLongPart)
+	f.Intrinsic.Control.Else
+		f.Data.DataTable.SetValue("dt",v.Local.i,"InventoryItemCode",v.DataTable.dt(v.Local.i).PART!FIELDVALTRIM)
+	f.Intrinsic.Control.EndIf
+	
+	'Get PO Description
+	f.Intrinsic.String.Build("SELECT DESCRIPTION FROM V_PO_LINES WHERE PURCHASE_ORDER='{0}' AND RECORD_NO='{1}0'",v.DataTable.dt(v.Local.i).PO_NO!FIELDVALTRIM,v.DataTable.dt(v.Local.i).PO_LINE!FIELDVALTRIM,v.Local.ssql)
+	f.ODBC.Connection!CON.executeandreturn(v.Local.sSql,v.Local.sDescription)
+	f.Intrinsic.Control.If(v.Local.sDescription.Trim,<>,"")
+		f.Data.DataTable.SetValue("dt",v.Local.i,"Description",v.Local.sDescription)
+	f.Intrinsic.Control.EndIf
+	
+	'Get Terms Calculated
+	f.Intrinsic.String.Build("SELECT PAYMENT_TERMS FROM V_VENDOR_PAY_TO WHERE VENDOR='{0}'",v.DataTable.dt(v.Local.i).VENDOR_ID!FIELDVALTRIM,v.Local.ssql)
+	f.ODBC.Connection!CON.executeandreturn(v.Local.sSql,v.Local.sPayment)
+	f.Intrinsic.Control.If(v.Local.sPayment.Trim,=,"2")
+		f.Intrinsic.Date.DateAdd("M",1,v.DataTable.dt(v.Local.i).InvoiceDate!FieldVal,v.Local.dDateDue)
+		f.Intrinsic.Date.Month(v.Local.dDateDue,v.Local.lmonth)
+		f.Intrinsic.Date.Year(v.Local.dDateDue,v.Local.lYear)
+		f.Intrinsic.Date.DateTimeSerial(v.Local.lYear,v.Local.lMonth,20,12,0,0,v.Local.dDateDue)
+		F.Data.DataTable.SetValue("dt",v.Local.i,"DueDate",v.Local.dDateDue)
+	f.Intrinsic.Control.Else
+		f.Data.DataTable.SetValue("dt",v.Local.i,"DueDate",v.DataTable.dt(v.Local.i).InvoiceDate!FieldVal)
+	f.Intrinsic.Control.EndIf
+	
+	'Get Tax Code
+	f.Intrinsic.String.Build("SELECT TAX_CODE FROM V_VENDOR_ADDL WHERE VENDOR='{0}'",v.DataTable.dt(v.Local.i).VENDOR_ID!FIELDVALTRIM,v.Local.ssql)
+	f.ODBC.Connection!CON.executeandreturn(v.Local.sSql,v.Local.sTax)
+	f.Intrinsic.Control.If(v.Local.sTax.Trim,=,"NZGST")
+		f.Data.DataTable.SetValue("dt",v.Local.i,"TaxType","15% GST on Expenses")
+	F.Intrinsic.Control.Else
+		f.Data.DataTable.SetValue("dt",v.Local.i,"TaxType","15% GST on Expenses")
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Next(V.Local.i)
+f.Data.DataTable.RemoveColumn("dt","PART")
+f.Data.DataTable.RemoveColumn("dt","VENDOR_ID")
+f.Data.DataTable.RemoveColumn("dt","PO_NO")
+f.Data.DataTable.RemoveColumn("dt","PO_LINE")
+Program.Sub.cleanData.End
+
+Program.Sub.setColumnProperty.Start
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","EmailAddress","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","POAddressLine1","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","POAddressLine2","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","POAddressLine3","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","POAddressLine4","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","POCity","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","PORegion","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","POPostalCode","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","POCountry","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","TrackingName1","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","TrackingOption1","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","TrackingName2","Visible","False")
+gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","TrackingOption2","Visible","False")
+Gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","DueDate","DisplayCustomDatetime","d")
+Gui.frmAP.gsgcAPBatches.SetColumnProperty("gv","InvoiceDate","DisplayCustomDatetime","d")
+Program.Sub.setColumnProperty.End
+
+Program.Sub.txtAPBatch_LostFocus.Start
+f.Intrinsic.Control.CallSub(buildTable,"BatchNo",v.Screen.frmAP!txtAPBatch.text)
+Program.Sub.txtAPBatch_LostFocus.End
+
+Program.Sub.cmdExport_Click.Start
+v.Local.sFile.Declare
+f.Intrinsic.String.Concat(v.Caller.LocalGSSTempDir,"\",v.Screen.frmAP!txtAPBatch.text,".csv",v.Local.sFile)
+f.Data.DataTable.SaveToCSV("dt",v.Local.sFile,true)
+F.Intrinsic.task.ShellExec(V.Caller.Handle,"OPEN",v.Caller.LocalGSSTempDir,"","",5)
+Program.Sub.cmdExport_Click.End
+
+Program.Sub.frmAP_UnLoad.Start
+f.Intrinsic.Control.CallSub(unload)
+Program.Sub.frmAP_UnLoad.End
+
+Program.Sub.unload.Start
+f.ODBC.Connection!CON.Close
+f.Intrinsic.Control.End
+Program.Sub.unload.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$rfisher$}$20240122103455221$}$b10QVt26jzz6R0J+Y14BUjvWwMpAez4tDzowrDeD4ZqjMm2ph+tHH68Mn2EHzUaCgRXYbNYL9QQ=
+Program.Sub.Comments.End
